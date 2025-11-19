@@ -23,6 +23,7 @@ const BRUSH_SIZES = [2, 5, 10]
 
 export function BodyChart({ onSave, initialData }: BodyChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const bgImageRef = useRef<HTMLImageElement | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [tool, setTool] = useState<Tool>('pencil')
   const [color, setColor] = useState('#000000')
@@ -37,81 +38,49 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    // Load and draw background image
+    const bg = new Image()
+    // Resolve the image URL relative to this module
+    bg.src = new URL('../../../reference/betterbod.png', import.meta.url).href
+    bg.onload = () => {
+      bgImageRef.current = bg
+      // Draw background scaled to canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(bg, 0, 0, canvas.width, canvas.height)
 
-    // Draw body silhouettes
-    drawBodySilhouettes(ctx, canvas.width, canvas.height)
-
-    // Save initial state
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    setHistory([imageData])
-    setHistoryIndex(0)
-
-    if (initialData) {
-      const img = new Image()
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0)
+      // If there is initial overlay data, draw it on top
+      if (initialData) {
+        const overlay = new Image()
+        overlay.onload = () => {
+          ctx.drawImage(overlay, 0, 0)
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          setHistory([imageData])
+          setHistoryIndex(0)
+        }
+        overlay.src = initialData
+      } else {
+        // Save initial state
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        setHistory([imageData])
+        setHistoryIndex(0)
       }
-      img.src = initialData
     }
   }, [initialData])
 
-  const drawBodySilhouettes = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, width, height)
-
-    const silhouetteWidth = width / 4
-    const silhouetteHeight = height * 0.9
-    const startY = height * 0.05
-
-    // Draw 4 body silhouettes (simplified representations)
-    const positions = [
-      { x: silhouetteWidth * 0.5, label: 'Left' },
-      { x: silhouetteWidth * 1.5, label: 'Back' },
-      { x: silhouetteWidth * 2.5, label: 'Front' },
-      { x: silhouetteWidth * 3.5, label: 'Right' }
-    ]
-
-    ctx.strokeStyle = '#e0e0e0'
-    ctx.lineWidth = 2
-
-    positions.forEach(({ x, label }) => {
-      // Simple body outline
-      ctx.beginPath()
-
-      // Head
-      ctx.arc(x, startY + 30, 20, 0, Math.PI * 2)
-      ctx.stroke()
-
-      // Body
-      ctx.beginPath()
-      ctx.moveTo(x, startY + 50)
-      ctx.lineTo(x, startY + silhouetteHeight * 0.5)
-
-      // Arms
-      ctx.moveTo(x - 40, startY + 100)
-      ctx.lineTo(x, startY + 70)
-      ctx.lineTo(x + 40, startY + 100)
-
-      // Torso
-      ctx.moveTo(x - 25, startY + 70)
-      ctx.lineTo(x - 25, startY + silhouetteHeight * 0.4)
-      ctx.lineTo(x + 25, startY + silhouetteHeight * 0.4)
-      ctx.lineTo(x + 25, startY + 70)
-
-      // Legs
-      ctx.moveTo(x - 15, startY + silhouetteHeight * 0.4)
-      ctx.lineTo(x - 20, startY + silhouetteHeight * 0.85)
-      ctx.moveTo(x + 15, startY + silhouetteHeight * 0.4)
-      ctx.lineTo(x + 20, startY + silhouetteHeight * 0.85)
-
-      ctx.stroke()
-
-      // Label
-      ctx.fillStyle = '#999'
-      ctx.font = '12px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(label, x, startY + silhouetteHeight + 10)
-    })
+  const drawBackground = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) => {
+    ctx.clearRect(0, 0, width, height)
+    const bg = bgImageRef.current
+    if (bg) {
+      ctx.drawImage(bg, 0, 0, width, height)
+    } else {
+      // Fallback: plain white background if image not yet loaded
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, width, height)
+    }
   }
 
   const saveToHistory = () => {
@@ -213,7 +182,7 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    drawBodySilhouettes(ctx, canvas.width, canvas.height)
+    drawBackground(ctx, canvas.width, canvas.height)
     saveToHistory()
   }
 

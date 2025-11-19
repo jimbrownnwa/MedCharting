@@ -22,7 +22,8 @@ const COLORS = ['#000000', '#666666', '#8B4513', '#00BCD4']
 const BRUSH_SIZES = [2, 5, 10]
 
 export function BodyChart({ onSave, initialData }: BodyChartProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null)
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null)
   const bgImageRef = useRef<HTMLImageElement | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [tool, setTool] = useState<Tool>('pencil')
@@ -33,34 +34,37 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
   const lastPosRef = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const bgCanvas = bgCanvasRef.current
+    const drawCanvas = drawCanvasRef.current
+    if (!bgCanvas || !drawCanvas) return
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const bgCtx = bgCanvas.getContext('2d')
+    const drawCtx = drawCanvas.getContext('2d')
+    if (!bgCtx || !drawCtx) return
     // Load and draw background image
     const bg = new Image()
     // Resolve the image URL relative to this module
     bg.src = new URL('../../../reference/betterbod.png', import.meta.url).href
     bg.onload = () => {
       bgImageRef.current = bg
-      // Draw background scaled to canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.drawImage(bg, 0, 0, canvas.width, canvas.height)
+      // Draw background scaled to bg canvas
+      bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height)
+      bgCtx.drawImage(bg, 0, 0, bgCanvas.width, bgCanvas.height)
 
-      // If there is initial overlay data, draw it on top
+      // If there is initial saved image (composited), draw it onto the background for backward compatibility
       if (initialData) {
-        const overlay = new Image()
-        overlay.onload = () => {
-          ctx.drawImage(overlay, 0, 0)
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-          setHistory([imageData])
+        const saved = new Image()
+        saved.onload = () => {
+          bgCtx.drawImage(saved, 0, 0, bgCanvas.width, bgCanvas.height)
+          // Initialize history as empty overlay
+          const emptyOverlay = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height)
+          setHistory([emptyOverlay])
           setHistoryIndex(0)
         }
-        overlay.src = initialData
+        saved.src = initialData
       } else {
-        // Save initial state
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        // Save initial empty overlay state
+        const imageData = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height)
         setHistory([imageData])
         setHistoryIndex(0)
       }
@@ -84,13 +88,13 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
   }
 
   const saveToHistory = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const drawCanvas = drawCanvasRef.current
+    if (!drawCanvas) return
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const drawCtx = drawCanvas.getContext('2d')
+    if (!drawCtx) return
 
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const imageData = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height)
     const newHistory = history.slice(0, historyIndex + 1)
     newHistory.push(imageData)
     setHistory(newHistory)
@@ -98,7 +102,7 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
   }
 
   const getPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current
+    const canvas = drawCanvasRef.current
     if (!canvas) return { x: 0, y: 0 }
 
     const rect = canvas.getBoundingClientRect()
@@ -120,7 +124,7 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || tool === 'select') return
 
-    const canvas = canvasRef.current
+    const canvas = drawCanvasRef.current
     if (!canvas) return
 
     const ctx = canvas.getContext('2d')
@@ -131,10 +135,16 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
     ctx.beginPath()
     ctx.moveTo(lastPosRef.current.x, lastPosRef.current.y)
     ctx.lineTo(pos.x, pos.y)
-    ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : color
     ctx.lineWidth = brushSize
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
+    if (tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.strokeStyle = 'rgba(0,0,0,1)'
+    } else {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.strokeStyle = color
+    }
     ctx.stroke()
 
     lastPosRef.current = pos
@@ -149,48 +159,58 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
 
   const undo = () => {
     if (historyIndex > 0) {
-      const canvas = canvasRef.current
-      if (!canvas) return
+      const drawCanvas = drawCanvasRef.current
+      if (!drawCanvas) return
 
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
+      const drawCtx = drawCanvas.getContext('2d')
+      if (!drawCtx) return
 
       const newIndex = historyIndex - 1
-      ctx.putImageData(history[newIndex], 0, 0)
+      drawCtx.putImageData(history[newIndex], 0, 0)
       setHistoryIndex(newIndex)
     }
   }
 
   const redo = () => {
     if (historyIndex < history.length - 1) {
-      const canvas = canvasRef.current
-      if (!canvas) return
+      const drawCanvas = drawCanvasRef.current
+      if (!drawCanvas) return
 
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
+      const drawCtx = drawCanvas.getContext('2d')
+      if (!drawCtx) return
 
       const newIndex = historyIndex + 1
-      ctx.putImageData(history[newIndex], 0, 0)
+      drawCtx.putImageData(history[newIndex], 0, 0)
       setHistoryIndex(newIndex)
     }
   }
 
   const clear = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const drawCanvas = drawCanvasRef.current
+    if (!drawCanvas) return
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const drawCtx = drawCanvas.getContext('2d')
+    if (!drawCtx) return
 
-    drawBackground(ctx, canvas.width, canvas.height)
+    // Clear only the drawing layer
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height)
     saveToHistory()
   }
 
   const handleSave = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const bgCanvas = bgCanvasRef.current
+    const drawCanvas = drawCanvasRef.current
+    if (!bgCanvas || !drawCanvas) return
 
-    const dataUrl = canvas.toDataURL('image/png')
+    // Composite background and drawing into a single image
+    const out = document.createElement('canvas')
+    out.width = bgCanvas.width
+    out.height = bgCanvas.height
+    const outCtx = out.getContext('2d')
+    if (!outCtx) return
+    outCtx.drawImage(bgCanvas, 0, 0)
+    outCtx.drawImage(drawCanvas, 0, 0)
+    const dataUrl = out.toDataURL('image/png')
     onSave(dataUrl)
   }
 
@@ -276,13 +296,19 @@ export function BodyChart({ onSave, initialData }: BodyChartProps) {
             </Button>
           </div>
 
-          {/* Canvas */}
-          <div className="flex-1 border rounded-md overflow-hidden">
+          {/* Canvas stack: background and overlay drawing canvas */}
+          <div className="flex-1 border rounded-md overflow-hidden relative" style={{ height: 500 }}>
             <canvas
-              ref={canvasRef}
+              ref={bgCanvasRef}
               width={800}
               height={500}
-              className="w-full cursor-crosshair"
+              className="w-full block select-none"
+            />
+            <canvas
+              ref={drawCanvasRef}
+              width={800}
+              height={500}
+              className="w-full absolute inset-0 cursor-crosshair"
               onMouseDown={startDrawing}
               onMouseMove={draw}
               onMouseUp={stopDrawing}

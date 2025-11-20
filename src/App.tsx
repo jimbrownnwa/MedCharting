@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Header } from '@/components/Header'
 import { PatientSidebar } from '@/components/PatientSidebar'
 import { PatientInfo } from '@/components/sections/PatientInfo'
@@ -8,68 +8,126 @@ import { FileUpload } from '@/components/sections/FileUpload'
 import { Button } from '@/components/ui/button'
 import { Lock, Eye, Settings, Plus } from 'lucide-react'
 import type { Patient } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 
-const samplePatients: Patient[] = [
-  {
-    id: '1',
-    name: 'Leanne Abraham',
-    date_of_birth: '1985-03-15',
-    age: 39,
-    gender: 'female',
-    email: 'leanne@email.com',
-    phone: '(555) 123-4567',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: '2',
-    name: 'Anthony Addy',
-    date_of_birth: '1990-07-22',
-    age: 34,
-    gender: 'male',
-    email: 'anthony@email.com',
-    phone: '(555) 234-5678',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: '3',
-    name: 'Ryan Anderson',
-    date_of_birth: '1988-11-08',
-    age: 36,
-    gender: 'male',
-    email: 'ryan@email.com',
-    phone: '(555) 345-6789',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: '4',
-    name: 'Sarah Belanger',
-    date_of_birth: '1992-01-30',
-    age: 32,
-    gender: 'female',
-    email: 'sarah@email.com',
-    phone: '(555) 456-7890',
-    created_at: new Date().toISOString()
-  }
-]
+// Live data comes from Supabase
 
 function App() {
-  const [patients] = useState<Patient[]>(samplePatients)
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(samplePatients[2])
-  const [patientData, setPatientData] = useState<Partial<Patient>>(samplePatients[2])
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
+  const [patientData, setPatientData] = useState<Partial<Patient>>({})
   const [primaryComplaint, setPrimaryComplaint] = useState('')
   const [chartStatus] = useState<'draft' | 'signed'>('draft')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  const handleAddPatient = () => {
-    console.log('Add patient clicked')
+  // Load patients on mount
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.error('Failed to fetch patients:', error)
+      } else {
+        setPatients(data as Patient[])
+        if (data && data.length > 0) {
+          setSelectedPatient(data[0] as Patient)
+          setPatientData(data[0] as Patient)
+        }
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const handleAddPatient = async () => {
+    const name = prompt('New patient name?')?.trim()
+    if (!name) return
+    setSaving(true)
+    const { data, error } = await supabase
+      .from('patients')
+      .insert({ name, date_of_birth: '1990-01-01', age: 0, gender: 'other' })
+      .select()
+      .single()
+    if (error) {
+      console.error('Failed to add patient:', error)
+      alert('Failed to add patient')
+    } else if (data) {
+      const newPatient = data as Patient
+      setPatients((prev) => [newPatient, ...prev])
+      setSelectedPatient(newPatient)
+      setPatientData(newPatient)
+    }
+    setSaving(false)
   }
 
   const handlePatientUpdate = (data: Partial<Patient>) => {
     setPatientData(data)
-    console.log('Patient updated:', data)
   }
 
-  const handleBodyChartSave = (drawingData: string) => {
-    console.log('Body chart saved:', drawingData.substring(0, 100) + '...')
+  const savePatientInfo = async () => {
+    if (!selectedPatient) return
+    setSaving(true)
+    const payload = {
+      name: patientData.name,
+      date_of_birth: patientData.date_of_birth,
+      age: patientData.age,
+      gender: patientData.gender,
+      email: patientData.email,
+      phone: patientData.phone,
+      address: patientData.address
+    }
+    const { data, error } = await supabase
+      .from('patients')
+      .update(payload)
+      .eq('id', selectedPatient.id)
+      .select()
+      .single()
+    if (error) {
+      console.error('Failed to save patient info:', error)
+      alert('Failed to save patient info')
+    } else if (data) {
+      const updated = data as Patient
+      setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+      setSelectedPatient(updated)
+      setPatientData(updated)
+    }
+    setSaving(false)
+  }
+
+  const handleBodyChartSave = async (drawingData: string) => {
+    if (!selectedPatient) {
+      alert('Select a patient first')
+      return
+    }
+    // Minimal stub: ensure a chart entry exists, then store drawing
+    const { data: entry, error: entryErr } = await supabase
+      .from('chart_entries')
+      .insert({
+        patient_id: selectedPatient.id,
+        primary_complaint: primaryComplaint,
+        status: 'draft',
+        owner: 'Demo User'
+      })
+      .select()
+      .single()
+    if (entryErr || !entry) {
+      console.error('Failed to create chart entry:', entryErr)
+      alert('Failed to save body chart (entry)')
+      return
+    }
+    const { error: drawErr } = await supabase
+      .from('body_chart_drawings')
+      .insert({ chart_entry_id: entry.id, drawing_data: drawingData })
+    if (drawErr) {
+      console.error('Failed to save drawing:', drawErr)
+      alert('Failed to save body chart (drawing)')
+      return
+    }
+    alert('Body chart saved')
   }
 
   const handleFileUpload = (files: Array<{ file: File; preview: string; description: string }>) => {
@@ -122,6 +180,11 @@ function App() {
                   patient={patientData}
                   onUpdate={handlePatientUpdate}
                 />
+                <div className="flex justify-end -mt-4">
+                  <Button variant="outline" size="sm" onClick={savePatientInfo} disabled={saving}>
+                    {saving ? 'Saving...' : 'Save Patient'}
+                  </Button>
+                </div>
 
                 <PrimaryComplaint
                   value={primaryComplaint}

@@ -140,22 +140,21 @@ function App() {
     alert('Body chart saved')
   }
 
-  // Find existing draft chart entry or create one
+  // Find existing draft chart entry or create one (robust to "no rows")
   const getOrCreateDraftEntry = async (patientId: string): Promise<ChartEntry | null> => {
-    const { data: existing, error: findErr } = await supabase
+    const { data: rows, error: findErr } = await supabase
       .from('chart_entries')
       .select('*')
       .eq('patient_id', patientId)
       .eq('status', 'draft')
       .order('created_at', { ascending: false })
       .limit(1)
-      .maybeSingle()
-    if (findErr && findErr.code !== 'PGRST116') {
-      // PGRST116 -> no rows
+    if (findErr) {
       console.error('Failed to find draft entry:', findErr)
       alert('Failed to load chart entry')
       return null
     }
+    const existing = rows && rows[0]
     if (existing) {
       setCurrentEntry(existing as ChartEntry)
       return existing as ChartEntry
@@ -175,29 +174,29 @@ function App() {
   }
 
   const savePrimaryComplaint = async () => {
-    if (!selectedPatient) {
-      alert('Select a patient first')
+    if (!selectedPatient || !selectedPatient.id) {
+      alert('Select and save a patient first')
       return
     }
     setSaving(true)
-    const entry = await getOrCreateDraftEntry(selectedPatient.id)
-    if (!entry) {
-      setSaving(false)
-      return
-    }
-    const { data, error } = await supabase
-      .from('chart_entries')
-      .update({ primary_complaint: primaryComplaint })
-      .eq('id', entry.id)
-      .select()
-      .single()
-    if (error) {
-      console.error('Failed to save primary complaint:', error)
-      alert('Failed to save primary complaint')
-    } else {
+    try {
+      const entry = await getOrCreateDraftEntry(selectedPatient.id)
+      if (!entry) return
+      const { data, error } = await supabase
+        .from('chart_entries')
+        .update({ primary_complaint: primaryComplaint })
+        .eq('id', entry.id)
+        .select()
+        .single()
+      if (error) {
+        console.error('Failed to save primary complaint:', error)
+        alert('Failed to save primary complaint')
+        return
+      }
       setCurrentEntry(data as ChartEntry)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const handleFileUpload = (files: Array<{ file: File; preview: string; description: string }>) => {

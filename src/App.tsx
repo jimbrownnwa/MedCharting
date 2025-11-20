@@ -20,6 +20,7 @@ function App() {
   const [chartStatus] = useState<'draft' | 'signed'>('draft')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isNewPatient, setIsNewPatient] = useState(false)
 
   // Load patients on mount
   useEffect(() => {
@@ -43,25 +44,25 @@ function App() {
     load()
   }, [])
 
-  const handleAddPatient = async () => {
-    const name = prompt('New patient name?')?.trim()
-    if (!name) return
-    setSaving(true)
-    const { data, error } = await supabase
-      .from('patients')
-      .insert({ name, date_of_birth: '1990-01-01', age: 0, gender: 'other' })
-      .select()
-      .single()
-    if (error) {
-      console.error('Failed to add patient:', error)
-      alert('Failed to add patient')
-    } else if (data) {
-      const newPatient = data as Patient
-      setPatients((prev) => [newPatient, ...prev])
-      setSelectedPatient(newPatient)
-      setPatientData(newPatient)
+  const handleAddPatient = () => {
+    // Create a local-only draft. Save occurs only when user clicks Save Patient.
+    const draft: Partial<Patient> = {
+      name: '',
+      date_of_birth: '',
+      age: 0,
+      gender: ''
     }
-    setSaving(false)
+    setIsNewPatient(true)
+    setPatientData(draft)
+    // Use a placeholder selection to render the editor area
+    setSelectedPatient({
+      id: '',
+      name: '',
+      date_of_birth: '',
+      age: 0,
+      gender: '',
+      created_at: new Date().toISOString()
+    } as Patient)
   }
 
   const handlePatientUpdate = (data: Partial<Patient>) => {
@@ -80,21 +81,42 @@ function App() {
       phone: patientData.phone,
       address: patientData.address
     }
-    const { data, error } = await supabase
-      .from('patients')
-      .update(payload)
-      .eq('id', selectedPatient.id)
-      .select()
-      .single()
-    if (error) {
-      console.error('Failed to save patient info:', error)
-      alert('Failed to save patient info')
-    } else if (data) {
-      const updated = data as Patient
-      setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
-      setSelectedPatient(updated)
-      setPatientData(updated)
+    let updated: Patient | null = null
+    if (isNewPatient || !selectedPatient.id) {
+      // Insert new patient
+      const { data, error } = await supabase
+        .from('patients')
+        .insert(payload)
+        .select()
+        .single()
+      if (error) {
+        console.error('Failed to create patient:', error)
+        alert('Failed to create patient')
+        setSaving(false)
+        return
+      }
+      updated = data as Patient
+      setPatients((prev) => [updated!, ...prev])
+      setIsNewPatient(false)
+    } else {
+      // Update existing
+      const { data, error } = await supabase
+        .from('patients')
+        .update(payload)
+        .eq('id', selectedPatient.id)
+        .select()
+        .single()
+      if (error) {
+        console.error('Failed to save patient info:', error)
+        alert('Failed to save patient info')
+        setSaving(false)
+        return
+      }
+      updated = data as Patient
+      setPatients((prev) => prev.map((p) => (p.id === updated!.id ? updated! : p)))
     }
+    setSelectedPatient(updated!)
+    setPatientData(updated!)
     setSaving(false)
   }
 
@@ -147,6 +169,7 @@ function App() {
           patients={patients}
           selectedPatient={selectedPatient}
           onSelectPatient={(patient) => {
+            setIsNewPatient(false)
             setSelectedPatient(patient)
             setPatientData(patient)
           }}

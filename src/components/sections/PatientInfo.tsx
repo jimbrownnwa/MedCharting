@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +12,11 @@ interface PatientInfoProps {
 
 export function PatientInfo({ patient, onUpdate }: PatientInfoProps) {
   const [formData, setFormData] = useState<Partial<Patient>>(patient)
+
+  // Sync local form state when parent patient prop changes (e.g., Add Patient or switching patients)
+  useEffect(() => {
+    setFormData(patient)
+  }, [patient])
 
   const handleChange = (field: keyof Patient, value: string | number) => {
     const updated = { ...formData, [field]: value }

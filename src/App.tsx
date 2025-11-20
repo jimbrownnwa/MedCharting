@@ -7,7 +7,7 @@ import { BodyChart } from '@/components/sections/BodyChart'
 import { FileUpload } from '@/components/sections/FileUpload'
 import { Button } from '@/components/ui/button'
 import { Lock, Eye, Settings, Plus } from 'lucide-react'
-import type { Patient } from '@/lib/supabase'
+import type { Patient, ChartEntry } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 
 // Live data comes from Supabase
@@ -21,6 +21,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isNewPatient, setIsNewPatient] = useState(false)
+  const [currentEntry, setCurrentEntry] = useState<ChartEntry | null>(null)
 
   // Load patients on mount
   useEffect(() => {
@@ -125,22 +126,9 @@ function App() {
       alert('Select a patient first')
       return
     }
-    // Minimal stub: ensure a chart entry exists, then store drawing
-    const { data: entry, error: entryErr } = await supabase
-      .from('chart_entries')
-      .insert({
-        patient_id: selectedPatient.id,
-        primary_complaint: primaryComplaint,
-        status: 'draft',
-        owner: 'Demo User'
-      })
-      .select()
-      .single()
-    if (entryErr || !entry) {
-      console.error('Failed to create chart entry:', entryErr)
-      alert('Failed to save body chart (entry)')
-      return
-    }
+    // Ensure a draft chart entry exists for this patient
+    const entry = await getOrCreateDraftEntry(selectedPatient.id)
+    if (!entry) return
     const { error: drawErr } = await supabase
       .from('body_chart_drawings')
       .insert({ chart_entry_id: entry.id, drawing_data: drawingData })
@@ -150,6 +138,66 @@ function App() {
       return
     }
     alert('Body chart saved')
+  }
+
+  // Find existing draft chart entry or create one
+  const getOrCreateDraftEntry = async (patientId: string): Promise<ChartEntry | null> => {
+    const { data: existing, error: findErr } = await supabase
+      .from('chart_entries')
+      .select('*')
+      .eq('patient_id', patientId)
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (findErr && findErr.code !== 'PGRST116') {
+      // PGRST116 -> no rows
+      console.error('Failed to find draft entry:', findErr)
+      alert('Failed to load chart entry')
+      return null
+    }
+    if (existing) {
+      setCurrentEntry(existing as ChartEntry)
+      return existing as ChartEntry
+    }
+    const { data: created, error: createErr } = await supabase
+      .from('chart_entries')
+      .insert({ patient_id: patientId, primary_complaint, status: 'draft', owner: 'Demo User' })
+      .select()
+      .single()
+    if (createErr || !created) {
+      console.error('Failed to create chart entry:', createErr)
+      alert('Failed to create chart entry')
+      return null
+    }
+    setCurrentEntry(created as ChartEntry)
+    return created as ChartEntry
+  }
+
+  const savePrimaryComplaint = async () => {
+    if (!selectedPatient) {
+      alert('Select a patient first')
+      return
+    }
+    setSaving(true)
+    const entry = await getOrCreateDraftEntry(selectedPatient.id)
+    if (!entry) {
+      setSaving(false)
+      return
+    }
+    const { data, error } = await supabase
+      .from('chart_entries')
+      .update({ primary_complaint: primaryComplaint })
+      .eq('id', entry.id)
+      .select()
+      .single()
+    if (error) {
+      console.error('Failed to save primary complaint:', error)
+      alert('Failed to save primary complaint')
+    } else {
+      setCurrentEntry(data as ChartEntry)
+    }
+    setSaving(false)
   }
 
   const handleFileUpload = (files: Array<{ file: File; preview: string; description: string }>) => {
@@ -215,6 +263,11 @@ function App() {
                   status={chartStatus}
                   owner="Demo Owner"
                 />
+                <div className="flex justify-end -mt-4">
+                  <Button variant="outline" size="sm" onClick={savePrimaryComplaint} disabled={saving || !primaryComplaint.trim()}>
+                    {saving ? 'Saving...' : 'Save Primary Complaint'}
+                  </Button>
+                </div>
 
                 <BodyChart
                   onSave={handleBodyChartSave}

@@ -124,21 +124,24 @@ function App() {
   }
 
   const handleBodyChartSave = async (drawingData: string) => {
-    if (!selectedPatient) {
-      alert('Select a patient first')
+    if (!selectedPatient || !selectedPatient.id) {
+      alert('Select and save a patient first')
       return
     }
     // Ensure a draft chart entry exists for this patient
     const entry = await getOrCreateDraftEntry(selectedPatient.id)
     if (!entry) return
-    const { error: drawErr } = await supabase
+    const { data, error: drawErr } = await supabase
       .from('body_chart_drawings')
       .insert({ chart_entry_id: entry.id, drawing_data: drawingData })
+      .select()
+      .single()
     if (drawErr) {
       console.error('Failed to save drawing:', drawErr)
       alert('Failed to save body chart (drawing)')
       return
     }
+    console.log('Saved body chart drawing id:', (data as any)?.id)
     alert('Body chart saved')
   }
 

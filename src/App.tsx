@@ -23,6 +23,7 @@ function App() {
   const [savingComplaint, setSavingComplaint] = useState(false)
   const [isNewPatient, setIsNewPatient] = useState(false)
   const [currentEntry, setCurrentEntry] = useState<ChartEntry | null>(null)
+  const [uploadingFiles, setUploadingFiles] = useState(false)
 
   // Load patients on mount
   useEffect(() => {
@@ -200,8 +201,60 @@ function App() {
     }
   }
 
-  const handleFileUpload = (files: Array<{ file: File; preview: string; description: string }>) => {
-    console.log('Files uploaded:', files)
+  const handleFileUpload = async (files: Array<{ file: File; preview: string; description: string }>) => {
+    if (!selectedPatient || !selectedPatient.id) {
+      alert('Select and save a patient first')
+      return
+    }
+    setUploadingFiles(true)
+    try {
+      const entry = await getOrCreateDraftEntry(selectedPatient.id)
+      if (!entry) return
+
+      const bucket = 'chart-files'
+      const uploads: { path: string; name: string; type: string; size: number; description: string }[] = []
+
+      for (const f of files) {
+        const cleanName = f.file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')
+        const key = `charts/${entry.id}/${Date.now()}-${cleanName}`
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .upload(key, f.file, { contentType: f.file.type })
+        if (error) {
+          console.error('Upload failed:', error)
+          alert(`Upload failed for ${f.file.name}: ${error.message}. Ensure storage bucket "${bucket}" exists.`)
+          return
+        }
+        uploads.push({
+          path: data.path,
+          name: f.file.name,
+          type: f.file.type,
+          size: f.file.size,
+          description: f.description || ''
+        })
+      }
+
+      if (uploads.length) {
+        const rows = uploads.map((u) => ({
+          chart_entry_id: entry.id,
+          file_path: u.path,
+          file_name: u.name,
+          file_type: u.type,
+          file_size: u.size,
+          description: u.description
+        }))
+        const { error: insertErr } = await supabase.from('file_uploads').insert(rows)
+        if (insertErr) {
+          console.error('Failed to record uploads:', insertErr)
+          alert('Files uploaded, but failed to record in database')
+          return
+        }
+      }
+
+      alert(`Uploaded ${uploads.length} file${uploads.length === 1 ? '' : 's'}`)
+    } finally {
+      setUploadingFiles(false)
+    }
   }
 
   const handleSign = () => {

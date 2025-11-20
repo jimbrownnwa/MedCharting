@@ -19,7 +19,8 @@ function App() {
   const [primaryComplaint, setPrimaryComplaint] = useState('')
   const [chartStatus] = useState<'draft' | 'signed'>('draft')
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [savingPatient, setSavingPatient] = useState(false)
+  const [savingComplaint, setSavingComplaint] = useState(false)
   const [isNewPatient, setIsNewPatient] = useState(false)
   const [currentEntry, setCurrentEntry] = useState<ChartEntry | null>(null)
 
@@ -72,7 +73,7 @@ function App() {
 
   const savePatientInfo = async () => {
     if (!selectedPatient) return
-    setSaving(true)
+    setSavingPatient(true)
     const payload = {
       name: patientData.name,
       date_of_birth: patientData.date_of_birth,
@@ -93,7 +94,7 @@ function App() {
       if (error) {
         console.error('Failed to create patient:', error)
         alert('Failed to create patient')
-        setSaving(false)
+        setSavingPatient(false)
         return
       }
       updated = data as Patient
@@ -110,7 +111,7 @@ function App() {
       if (error) {
         console.error('Failed to save patient info:', error)
         alert('Failed to save patient info')
-        setSaving(false)
+        setSavingPatient(false)
         return
       }
       updated = data as Patient
@@ -118,7 +119,7 @@ function App() {
     }
     setSelectedPatient(updated!)
     setPatientData(updated!)
-    setSaving(false)
+    setSavingPatient(false)
   }
 
   const handleBodyChartSave = async (drawingData: string) => {
@@ -178,7 +179,7 @@ function App() {
       alert('Select and save a patient first')
       return
     }
-    setSaving(true)
+    setSavingComplaint(true)
     try {
       const entry = await getOrCreateDraftEntry(selectedPatient.id)
       if (!entry) return
@@ -195,7 +196,7 @@ function App() {
       }
       setCurrentEntry(data as ChartEntry)
     } finally {
-      setSaving(false)
+      setSavingComplaint(false)
     }
   }
 
@@ -251,8 +252,8 @@ function App() {
                   onUpdate={handlePatientUpdate}
                 />
                 <div className="flex justify-end -mt-4">
-                  <Button variant="outline" size="sm" onClick={savePatientInfo} disabled={saving}>
-                    {saving ? 'Saving...' : 'Save Patient'}
+                  <Button variant="outline" size="sm" onClick={savePatientInfo} disabled={savingPatient}>
+                    {savingPatient ? 'Saving...' : 'Save Patient'}
                   </Button>
                 </div>
 
@@ -263,8 +264,8 @@ function App() {
                   owner="Demo Owner"
                 />
                 <div className="flex justify-end -mt-4">
-                  <Button variant="outline" size="sm" onClick={savePrimaryComplaint} disabled={saving || !primaryComplaint.trim()}>
-                    {saving ? 'Saving...' : 'Save Primary Complaint'}
+                  <Button variant="outline" size="sm" onClick={savePrimaryComplaint} disabled={savingComplaint || !primaryComplaint.trim()}>
+                    {savingComplaint ? 'Saving...' : 'Save Primary Complaint'}
                   </Button>
                 </div>
 

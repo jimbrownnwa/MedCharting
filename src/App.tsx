@@ -162,7 +162,7 @@ function App() {
     }
     const { data: created, error: createErr } = await supabase
       .from('chart_entries')
-      .insert({ patient_id: patientId, primary_complaint, status: 'draft', owner: 'Demo User' })
+      .insert({ patient_id: patientId, primary_complaint: primaryComplaint, status: 'draft', owner: 'Demo User' })
       .select()
       .single()
     if (createErr || !created) {
